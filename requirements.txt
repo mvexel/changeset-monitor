@@ -1,0 +1,6 @@
+argparse==1.1
+bz2file==0.98
+python-dateutil==2.2
+simplejson==3.4.0
+six==1.6.1
+wsgiref==0.1.2
