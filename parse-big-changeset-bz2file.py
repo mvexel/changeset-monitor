@@ -2,13 +2,13 @@ import bz2file
 import xml.etree.ElementTree as ET
 import argparse
 import os
-from dateutil.parser import parse
 from sys import stdout, exit
 import psycopg2
+import config
+import helpers
 from psycopg2.extras import register_hstore
 
 VERBOSITY = 1000
-PG_CONNECTION = "dbname=changesets user=martijnv host=localhost"
 TABLENAME = "changesets"
 
 # assumes:
@@ -17,8 +17,8 @@ TABLENAME = "changesets"
 #     id bigint,
 #     osm_uid integer,
 #     osm_user character varying,
-#     created_at timestamp without time zone,
-#     closed_at timestamp without time zone,
+#     created_at timestamp with time zone,
+#     closed_at timestamp with time zone,
 #     num_changes integer,
 #     min_lon double precision,
 #     max_lon double precision,
@@ -30,7 +30,7 @@ TABLENAME = "changesets"
 changesets_values = []
 errors = []
 
-conn = psycopg2.connect(PG_CONNECTION)
+conn = psycopg2.connect(config.PG_CONNECTION)
 register_hstore(conn)
 cursor = conn.cursor()
 
@@ -47,14 +47,7 @@ keys = ["id",
         "tags"]
 
 
-def resolve_user(elem):
-    if not "uid" in elem.attrib:
-        return [0, "anonymous"]
-    else:
-        return [int(elem.attrib["uid"]), elem.attrib["user"]]
-
-
-def pg_insert(values):
+def pg_insert_changesets(values):
     try:
         base_string = "({placeholders})".format(
             placeholders=", ".join(("%s " * len(keys)).split()))
@@ -75,33 +68,6 @@ def pg_insert(values):
     return True
 
 
-def get_changeset_values_as_tuple(elem):
-    tags = {}
-    # add the changeset id
-    values = [int(elem.attrib["id"])]
-    # add user id and username
-    values.extend(resolve_user(elem))
-    # add dates and change count
-    values.extend([
-        parse(elem.attrib["created_at"]),
-        parse(elem.attrib["closed_at"]),
-        int(elem.attrib["num_changes"])])
-    # add bbox if present
-    if "min_lon" and "max_lon" and "min_lat" and "max_lat" in elem.attrib:
-        values.extend([
-            float(elem.attrib["min_lon"]),
-            float(elem.attrib["max_lon"]),
-            float(elem.attrib["min_lat"]),
-            float(elem.attrib["max_lat"])])
-    else:
-        values.extend([0.0, 0.0, 0.0, 0.0])
-    # add tags if present
-    for child in elem:
-        tags[child.attrib["k"]] = child.attrib["v"]
-    values.append(tags)
-    return tuple(values)
-
-
 def parse_xml_file(path, limit=None):
     counter = 0
     with bz2file.open(path) as changesetxml:
@@ -111,12 +77,13 @@ def parse_xml_file(path, limit=None):
         for event, elem in context:
             if event == "end" and elem.tag == "changeset":
                 counter += 1
-                changesets_values.append(get_changeset_values_as_tuple(elem))
+                changesets_values.append(
+                    helpers.get_changeset_values_as_tuple(elem))
                 root.clear()
             if limit and counter == limit:
                 break
             if counter > 0 and not counter % VERBOSITY:
-                pg_insert(changesets_values)
+                pg_insert_changesets(changesets_values)
                 changesets_values[:] = []
     return counter
 
@@ -137,7 +104,7 @@ if __name__ == "__main__":
     if args.test:
         print 'testing'
         import testdata
-        pg_insert(testdata.sample1)
+        pg_insert_changesets(testdata.sample1)
         exit(0)
 
     stdout.write("working.")
@@ -146,7 +113,7 @@ if __name__ == "__main__":
         processed = parse_xml_file(args.changesetfile, args.limit)
         # push any remaining changesets
         if len(changesets_values) > 0:
-            pg_insert(changesets_values)
+            pg_insert_changesets(changesets_values)
     else:
         print 'no such file: ', args.changesetfile
     cursor.close()
