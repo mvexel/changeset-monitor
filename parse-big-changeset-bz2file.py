@@ -3,14 +3,11 @@ import xml.etree.ElementTree as ET
 import argparse
 import os
 from dateutil.parser import parse
-import simplejson as json
-import datetime
-from time import mktime
-from sys import stdout
+from sys import stdout, exit
 import psycopg2
 from psycopg2.extras import register_hstore
 
-VERBOSITY = 2000
+VERBOSITY = 1000
 PG_CONNECTION = "dbname=changesets user=martijnv host=localhost"
 TABLENAME = "changesets"
 
@@ -31,6 +28,7 @@ TABLENAME = "changesets"
 # );
 
 changesets_values = []
+errors = []
 
 conn = psycopg2.connect(PG_CONNECTION)
 register_hstore(conn)
@@ -49,15 +47,6 @@ keys = ["id",
         "tags"]
 
 
-class MyEncoder(json.JSONEncoder):
-
-    def default(self, obj):
-        if isinstance(obj, datetime.datetime):
-            return int(mktime(obj.timetuple()))
-
-        return json.JSONEncoder.default(self, obj)
-
-
 def resolve_user(elem):
     if not "uid" in elem.attrib:
         return [0, "anonymous"]
@@ -66,13 +55,24 @@ def resolve_user(elem):
 
 
 def pg_insert(values):
-    base_string = "({placeholders})".format(
-        placeholders=", ".join(("%s " * len(keys)).split()))
-    arguments = ", ".join(cursor.mogrify(base_string, v) for v in values)
-    cursor.execute("INSERT INTO {tablename} VALUES {arguments}".format(
-        tablename=TABLENAME,
-        arguments=arguments))
-    conn.commit()
+    try:
+        base_string = "({placeholders})".format(
+            placeholders=", ".join(("%s " * len(keys)).split()))
+        arguments = ", ".join(cursor.mogrify(base_string, v) for v in values)
+        if len(arguments) == 0:
+            return False
+        cursor.execute("INSERT INTO {tablename} VALUES {arguments}".format(
+            tablename=TABLENAME,
+            arguments=arguments))
+        conn.commit()
+        stdout.write(".")
+        stdout.flush()
+    except psycopg2.Error as e:
+        errors.append(e.pgerror)
+        stdout.write("x")
+        stdout.flush()
+        return False
+    return True
 
 
 def get_changeset_values_as_tuple(elem):
@@ -105,17 +105,20 @@ def get_changeset_values_as_tuple(elem):
 def parse_xml_file(path, limit=None):
     counter = 0
     with bz2file.open(path) as changesetxml:
-        for event, elem in ET.iterparse(changesetxml):
+        context = ET.iterparse(changesetxml, events=('start', 'end'))
+        context = iter(context)
+        event, root = context.next()
+        for event, elem in context:
             if event == "end" and elem.tag == "changeset":
                 counter += 1
                 changesets_values.append(get_changeset_values_as_tuple(elem))
+                root.clear()
             if limit and counter == limit:
                 break
             if counter > 0 and not counter % VERBOSITY:
-                stdout.write(".")
-                stdout.flush()
                 pg_insert(changesets_values)
                 changesets_values[:] = []
+    return counter
 
 
 if __name__ == "__main__":
@@ -125,12 +128,22 @@ if __name__ == "__main__":
     parser.add_argument('changesetfile',
                         help='The location of the changesets bz2 file')
     parser.add_argument('-l', dest='limit', type=int, help='Limit')
+    parser.add_argument('-t',
+                        dest='test',
+                        action='store_true',
+                        help='shoot a test')
     args = parser.parse_args()
+
+    if args.test:
+        print 'testing'
+        import testdata
+        pg_insert(testdata.sample1)
+        exit(0)
 
     stdout.write("working.")
 
     if os.path.exists(args.changesetfile):
-        parse_xml_file(args.changesetfile, args.limit)
+        processed = parse_xml_file(args.changesetfile, args.limit)
         # push any remaining changesets
         if len(changesets_values) > 0:
             pg_insert(changesets_values)
@@ -138,4 +151,7 @@ if __name__ == "__main__":
         print 'no such file: ', args.changesetfile
     cursor.close()
     conn.close()
-    print "\ndone."
+    print "\ndone. {counter} changesets processed.".format(counter=processed)
+    if len(errors) > 0:
+        print "not all went great, errors:"
+        print errors
