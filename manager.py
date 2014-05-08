@@ -31,16 +31,17 @@ def parse_xml_file(path, limit=None):
     return counter
 
 
+def wipe_database(args):
+    print "going to wipe database..."
+    raw_input("press ^C now if you don't want "
+              "this or enter to continue.\n")
+    print "wiping..."
+    database.wipe()
+
+
 def init_database(args):
-    if "wipe" in args:
-        print "going to wipe database..."
-        raw_input("press ^C now if you don't want "
-                  "this or enter to continue.\n")
-        print "wiping..."
-        database.wipe(args.host, args.port, args.user, args.database)
-    else:
-        print "going to initialize database..."
-        database.init(args.host, args.port, args.user, args.database)
+    print "going to initialize database..."
+    database.init()
 
 
 def load_database(args):
@@ -67,33 +68,23 @@ def load_database(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Parse the big changesets file from http://planet."
-                    "openstreetmap.org/planet/changesets-latest.osm.bz2.")
-    subparsers = parser.add_subparsers(help="choose a command")
+        description="Various database management commands to manually"
+                    "initialize and control the changesets application")
+    subparsers = parser.add_subparsers(
+        help="choose between database initialization and loading.")
 
     # the initialization subcommand
     parser_init = subparsers.add_parser(
         "init",
-        help="initialize the database (needs to exist)")
+        help="This will create your database and initialize the "
+        "changesets table. Please make sure you have PostgreSQL "
+        "running and accepting connections from you on the host "
+        "and port specified in config.py")
     parser_init.set_defaults(func=init_database)
-    parser_init.add_argument(
+
+    parser_wipe = subparsers.add_parser(
         "wipe",
-        help="wipe the database")
-    parser_init.add_argument(
-        "--host",
-        default="localhost",
-        help="database host")
-    parser_init.add_argument(
-        "--port",
-        default=5432,
-        help="database port")
-    parser_init.add_argument(
-        "--user",
-        help="database user")
-    parser_init.add_argument(
-        "--database",
-        default="changesets",
-        help="database name")
+        help="This command wipes your changesets table clean.")
 
     # the loading subcommand
     parser_load = subparsers.add_parser(
