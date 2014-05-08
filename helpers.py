@@ -1,6 +1,7 @@
 import config
 import requests
 import os
+import sys
 import xml.etree.ElementTree as ET
 
 osmtypes = ["node", "way", "relation"]
@@ -67,7 +68,6 @@ def get_changeset_path_for(utctime):
     while len(parts) < 3:
         parts.insert(0, "000")
     parts.insert(0, "http://planet.osm.org/replication/changesets/")
-    print parts
     return '{path}.osm.gz'.format(path=os.path.join(*parts))
 
 
@@ -165,3 +165,25 @@ def resolve_user(elem):
         return [0, "anonymous"]
     else:
         return [int(elem.attrib["uid"]), elem.attrib["user"]]
+
+
+def handle_error(e):
+    print hilite("uh oh", 0, 1)
+    print hilite(e.message, 0, 0)
+
+
+# shameless paste from http://stackoverflow.com/a/2330297
+def hilite(string, status, bold):
+    if sys.stdout.isatty():
+        attr = []
+        if status:
+            # green
+            attr.append('32')
+        else:
+            # red
+            attr.append('31')
+        if bold:
+            attr.append('1')
+        return '\x1b[%sm%s\x1b[0m' % (';'.join(attr), string)
+    else:
+        return string
