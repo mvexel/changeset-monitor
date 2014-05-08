@@ -1,6 +1,10 @@
 import config
 import requests
 import os
+import xml.etree.ElementTree as ET
+
+osmtypes = ["node", "way", "relation"]
+actions = ["create", "modify", "delete"]
 
 
 def get_latest_local_changeset():
@@ -60,7 +64,6 @@ def get_changeset_path_for(utctime):
 
 def changesets_for_minutely(path):
     import gzip
-    import xml.etree.ElementTree as ET
     chunk_size = 1024
     tempfile = os.path.join(config.TMP_DIR, 'temp.gz')
     changesets = []
@@ -111,6 +114,31 @@ def get_changeset_values_as_tuple(elem):
         tags[child.attrib["k"]] = child.attrib["v"]
     values.append(tags)
     return tuple(values)
+
+
+def analyze_changeset(elementtree):
+    result = {}
+    for action in actions:
+        action_breakdown = {}
+        # reorganize the xml
+        mock_xml = ET.Element(action)
+        for elem in elementtree.findall(action):
+            mock_xml.extend(list(elem))
+        for osmtype in osmtypes:
+            action_breakdown[osmtype] = len(mock_xml.findall(osmtype))
+        result[action] = action_breakdown
+    return result
+
+
+def get_changeset_details_from_osm(changeset_id):
+    """gets the full changeset from the OSM API and returns it as a dict"""
+    url = os.path.join(
+        config.OSM_API_BASE_URL,
+        'changeset',
+        changeset_id,
+        'download')
+    response = requests.get(url)
+    return analyze_changeset(ET.fromstring(response.content))
 
 
 def resolve_user(elem):
