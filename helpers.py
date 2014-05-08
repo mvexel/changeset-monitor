@@ -3,27 +3,10 @@ import requests
 import os
 import sys
 import xml.etree.ElementTree as ET
+import database
 
 osmtypes = ["node", "way", "relation"]
 actions = ["create", "modify", "delete"]
-
-
-def get_latest_local_changeset():
-    """get the timestamp at which the last changeset in the local
-    database was closed."""
-    import psycopg2
-    connection = psycopg2.connect(config.PG_CONNECTION)
-    cursor = connection.cursor()
-    try:
-        cursor.execute(
-            "SELECT closed_at FROM changesets ORDER BY id DESC LIMIT 1")
-        query_result = cursor.fetchone()
-        result = query_result[0]
-    except Exception:
-        print 'something went wrong'
-        result = None
-    finally:
-        return result
 
 
 def get_current_state_from_server():
@@ -56,27 +39,32 @@ def get_changeset_path_for(utctime):
     current_state = get_current_state_from_server()
     if 'last_run' not in current_state:
         return ""
-    parts = []
     minutes = int(floor(
         (current_state['last_run'] - utctime).total_seconds() / 60))
     rem = current_state['sequence'] - minutes
-    if rem < 0:
-        rem = 0
-    while rem > 0:
-        parts.insert(0, (str(rem % 1000).zfill(3)))
-        rem = (rem - rem % 1000) / 1000
+    return path_for_sequence(rem)
+
+
+def path_for_sequence(sequence_number):
+    parts = []
+    if sequence_number < 0:
+        sequence_number = 0
+    while sequence_number > 0:
+        parts.insert(0, (str(sequence_number % 1000).zfill(3)))
+        sequence_number = (sequence_number - sequence_number % 1000) / 1000
     while len(parts) < 3:
         parts.insert(0, "000")
     parts.insert(0, "http://planet.osm.org/replication/changesets/")
     return '{path}.osm.gz'.format(path=os.path.join(*parts))
 
 
-def changesets_for_minutely(path):
+def changesets_for_minutely(sequence_number):
     """Read a minutely changeset file and resurn the changesets
     containted within it as an elementtree object"""
     import gzip
     chunk_size = 1024
     tempfile = os.path.join(config.TMP_DIR, 'temp.gz')
+    path = path_for_sequence(sequence_number)
     changesets = []
     with open(tempfile, 'wb') as fd:
         for chunk in requests.get(path).iter_content(chunk_size):
@@ -85,14 +73,14 @@ def changesets_for_minutely(path):
         for event, elem in ET.iterparse(changeset_xml):
             if event == "end" and elem.tag == "changeset":
                 changesets.append(
-                    get_changeset_values_as_tuple(elem))
+                    get_changeset_values_as_dict(elem))
     return changesets
 
 
 def backfill_changeset_database():
     """Make the changeset database catch up."""
     # get latest changeset in db
-    latest_changeset_in_local_db = get_latest_local_changeset()
+    latest_changeset_in_local_db = database.get_latest_changeset()
     # figure out which changeset minutely to fetch first
     first_changeset_to_fetch =\
         get_changeset_path_for(latest_changeset_in_local_db)
@@ -100,34 +88,59 @@ def backfill_changeset_database():
     print first_changeset_to_fetch
 
 
-def get_changeset_values_as_tuple(elem):
+def get_changeset_values_as_dict(elem):
     """Parse a changeset XML element from the OSM changeset
     metadata file into a tuple of values ready to insert into
     the changeset database schema"""
     from dateutil.parser import parse
     tags = {}
+    changeset = {}
+    for key in elem.attrib:
+        if key in ['created_at', 'closed_at']:
+            changeset[key] = parse(elem.attrib[key])
+        else:
+            changeset[key] = elem.attrib[key]
+    for child in elem:
+        tags[child.attrib["k"]] = child.attrib["v"]
+    changeset["tags"] = tags
+    return changeset
+
+
+def as_tuple(changeset):
+    """get an insert-ready tuple from a changeset dict"""
     # add the changeset id
-    values = [int(elem.attrib["id"])]
+    if not "id" in changeset:
+        # changeset is borked
+        return []
+    values = [int(changeset["id"])]
     # add user id and username
-    values.extend(resolve_user(elem))
+    values.extend(resolve_user(changeset))
     # add dates and change count
-    values.extend([
-        parse(elem.attrib["created_at"]),
-        parse(elem.attrib["closed_at"]),
-        int(elem.attrib["num_changes"])])
+    if "created_at" in changeset:
+        values.append(changeset["created_at"])
+    else:
+        values.append(None)
+    if "closed_at" in changeset:
+        values.append(changeset["closed_at"])
+    else:
+        values.append(None)
+    if "num_changes" in changeset:
+        values.append(int(changeset["num_changes"]))
+    else:
+        values.append(None)
     # add bbox if present
-    if "min_lon" and "max_lon" and "min_lat" and "max_lat" in elem.attrib:
+    if "min_lon" and "max_lon" and "min_lat" and "max_lat" in changeset:
         values.extend([
-            float(elem.attrib["min_lon"]),
-            float(elem.attrib["max_lon"]),
-            float(elem.attrib["min_lat"]),
-            float(elem.attrib["max_lat"])])
+            float(changeset["min_lon"]),
+            float(changeset["max_lon"]),
+            float(changeset["min_lat"]),
+            float(changeset["max_lat"])])
     else:
         values.extend([0.0, 0.0, 0.0, 0.0])
     # add tags if present
-    for child in elem:
-        tags[child.attrib["k"]] = child.attrib["v"]
-    values.append(tags)
+    if "tags" in changeset:
+        values.append(changeset["tags"])
+
     return tuple(values)
 
 
@@ -158,13 +171,13 @@ def get_changeset_details_from_osm(changeset_id):
     return analyze_changeset(ET.fromstring(response.content))
 
 
-def resolve_user(elem):
+def resolve_user(changeset):
     """given a changeset xml element, resolve the uid and user name,
     recognizing they can be empty because of early anonymous editing"""
-    if not "uid" in elem.attrib:
+    if not "uid" in changeset:
         return [0, "anonymous"]
     else:
-        return [int(elem.attrib["uid"]), elem.attrib["user"]]
+        return [int(changeset["uid"]), changeset["user"]]
 
 
 def handle_error(e):

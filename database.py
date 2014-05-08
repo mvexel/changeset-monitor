@@ -128,3 +128,21 @@ def insert_changesets(values):
     finally:
         cursor.close()
         conn.close()
+
+def get_latest_changeset():
+    """get the timestamp at which the last changeset in the local
+    database was closed."""
+    import psycopg2
+    conn = psycopg2.connect(get_connection_string())
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT closed_at FROM changesets ORDER BY id DESC LIMIT 1")
+        query_result = cursor.fetchone()
+        result = query_result[0]
+    except Exception:
+        print 'something went wrong'
+        result = None
+    finally:
+        conn.close()
+        return result
