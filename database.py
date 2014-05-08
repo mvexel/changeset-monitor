@@ -42,7 +42,6 @@ def init(host, port, user, database):
             port=port,
             user=user,
             database=database))
-    register_hstore(conn)
     cursor = conn.cursor()
     try:
         cursor.execute("""CREATE TABLE changesets (
@@ -57,6 +56,21 @@ def init(host, port, user, database):
         min_lat double precision,
         max_lat double precision,
         tags hstore);""")
+        conn.commit()
+    except psycopg2.Error as e:
+        helpers.handle_error(e)
+
+
+def wipe(host, port, user, database):
+    conn = psycopg2.connect(
+        "host={host} port={port} user={user} dbname={database}".format(
+            host=host,
+            port=port,
+            user=user,
+            database=database))
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM changesets")
         conn.commit()
     except psycopg2.Error as e:
         helpers.handle_error(e)

@@ -32,14 +32,21 @@ def parse_xml_file(path, limit=None):
 
 
 def init_database(args):
-    print "going to initialize database..."
-    database.init(args.host, args.port, args.user, args.database)
+    if "wipe" in args:
+        print "going to wipe database..."
+        raw_input("press ^C now if you don't want "
+                  "this or enter to continue.\n")
+        print "wiping..."
+        database.wipe(args.host, args.port, args.user, args.database)
+    else:
+        print "going to initialize database..."
+        database.init(args.host, args.port, args.user, args.database)
 
 
 def load_database(args):
     print "going to load database...sit back and relax..."
 
-    if "test" in args:
+    if args.test:
         print 'testing'
         import testdata
         database.insert_changesets(testdata.sample1)
@@ -69,6 +76,9 @@ if __name__ == "__main__":
         "init",
         help="initialize the database (needs to exist)")
     parser_init.set_defaults(func=init_database)
+    parser_init.add_argument(
+        "wipe",
+        help="wipe the database")
     parser_init.add_argument(
         "--host",
         default="localhost",

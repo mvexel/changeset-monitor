@@ -170,6 +170,7 @@ def resolve_user(elem):
 def handle_error(e):
     print hilite("uh oh", 0, 1)
     print hilite(e.message, 0, 0)
+    sys.exit(1)
 
 
 # shameless paste from http://stackoverflow.com/a/2330297
