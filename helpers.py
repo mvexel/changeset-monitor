@@ -8,6 +8,8 @@ actions = ["create", "modify", "delete"]
 
 
 def get_latest_local_changeset():
+    """get the timestamp at which the last changeset in the local
+    database was closed."""
     import psycopg2
     connection = psycopg2.connect(config.PG_CONNECTION)
     cursor = connection.cursor()
@@ -24,6 +26,8 @@ def get_latest_local_changeset():
 
 
 def get_current_state_from_server():
+    """Get the current state from the OSM server, including the current
+    delta sequence number, and the last run time."""
     # I dislike PyYAML, that is why
     from dateutil.parser import parse
     current_state_file_url =\
@@ -42,6 +46,11 @@ def get_current_state_from_server():
 
 
 def get_changeset_path_for(utctime):
+    """Given an UTC timestamp, get the path for what is likely to be
+    the corresponding changeset minutely delta. This may break down when
+    the minutely updates were interrupted, but it will always return a
+    path to a file that has changesets for the given timestamp or before,
+    guaranteed not after."""
     from math import floor
     current_state = get_current_state_from_server()
     if 'last_run' not in current_state:
@@ -63,6 +72,8 @@ def get_changeset_path_for(utctime):
 
 
 def changesets_for_minutely(path):
+    """Read a minutely changeset file and resurn the changesets
+    containted within it as an elementtree object"""
     import gzip
     chunk_size = 1024
     tempfile = os.path.join(config.TMP_DIR, 'temp.gz')
@@ -79,6 +90,7 @@ def changesets_for_minutely(path):
 
 
 def backfill_changeset_database():
+    """Make the changeset database catch up."""
     # get latest changeset in db
     latest_changeset_in_local_db = get_latest_local_changeset()
     # figure out which changeset minutely to fetch first
@@ -89,6 +101,9 @@ def backfill_changeset_database():
 
 
 def get_changeset_values_as_tuple(elem):
+    """Parse a changeset XML element from the OSM changeset
+    metadata file into a tuple of values ready to insert into
+    the changeset database schema"""
     from dateutil.parser import parse
     tags = {}
     # add the changeset id
@@ -117,6 +132,8 @@ def get_changeset_values_as_tuple(elem):
 
 
 def analyze_changeset(elementtree):
+    """get created, modified, deleted nodes, ways, relations
+    for a changeset xml object"""
     result = {}
     for action in actions:
         action_breakdown = {}
@@ -142,6 +159,8 @@ def get_changeset_details_from_osm(changeset_id):
 
 
 def resolve_user(elem):
+    """given a changeset xml element, resolve the uid and user name,
+    recognizing they can be empty because of early anonymous editing"""
     if not "uid" in elem.attrib:
         return [0, "anonymous"]
     else:
