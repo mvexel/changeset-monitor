@@ -121,13 +121,14 @@ def insert_changesets(values):
         stdout.write(".")
         stdout.flush()
         return True
-    except psycopg2.Error as e:
+    except:
         stdout.write("x")
         stdout.flush()
         return False
     finally:
         cursor.close()
         conn.close()
+
 
 def get_latest_changeset():
     """get the timestamp at which the last changeset in the local
