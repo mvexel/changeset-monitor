@@ -1,6 +1,6 @@
 PG_CONNECTION = {
-    "dbname": "changesets_test",
-    "user": "martijnv",
+    "dbname": "changesets",
+    "user": "osm",
     "host": "localhost"}
 
 TABLENAME = 'changesets'

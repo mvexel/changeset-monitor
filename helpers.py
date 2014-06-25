@@ -9,11 +9,9 @@ osmtypes = ["node", "way", "relation"]
 actions = ["create", "modify", "delete"]
 
 
-def get_connection_string(with_database=True):
+def get_connection_string():
     connstr = ""
     for key, val in config.PG_CONNECTION.iteritems():
-        if not with_database and key == "dbname":
-            continue
         connstr += " {key}={val}".format(
             key=key,
             val=val)
@@ -191,10 +189,13 @@ def resolve_user(changeset):
         return [int(changeset["uid"]), changeset["user"]]
 
 
-def handle_error(e):
+def handle_error(e, bail=True):
     print hilite("uh oh", 0, 1)
-    print hilite(e.message, 0, 0)
-    sys.exit(1)
+    template = "{0}: {1!r}"
+    message = template.format(type(e).__name__, e.args)
+    print hilite(message, 0, 0)
+    if bail:
+        sys.exit(1)
 
 
 # shameless paste from http://stackoverflow.com/a/2330297

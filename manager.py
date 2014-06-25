@@ -1,8 +1,8 @@
 import argparse
 import os
 from sys import stdout, exit
-from database import ChangesetStore
-
+from changesetstore import ChangesetStore
+from helpers import handle_error
 
 def wipe_database(args):
     print "going to wipe database..."
@@ -28,11 +28,11 @@ def load_database(args):
 
     stdout.write("working.")
 
-    if os.path.exists(args.changesetfile):
+    try:
         processed = ChangesetStore.parse_xml_file(
             args.changesetfile, args.limit)
-    else:
-        print 'no such file: ', args.changesetfile
+    except IOError as e:
+        handle_error(e)
     print "\ndone. {counter} changesets processed.".format(counter=processed)
 
 
