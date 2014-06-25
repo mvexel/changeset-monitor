@@ -1,34 +1,7 @@
-import bz2file
-import xml.etree.ElementTree as ET
 import argparse
 import os
 from sys import stdout, exit
-import helpers
-import database
-
-VERBOSITY = 1000
-
-changesets_values = []
-
-
-def parse_xml_file(path, limit=None):
-    counter = 0
-    with bz2file.open(path) as changesetxml:
-        context = ET.iterparse(changesetxml, events=('start', 'end'))
-        context = iter(context)
-        event, root = context.next()
-        for event, elem in context:
-            if event == "end" and elem.tag == "changeset":
-                counter += 1
-                changesets_values.append(
-                    helpers.get_changeset_values_as_tuple(elem))
-                root.clear()
-            if limit and counter == limit:
-                break
-            if counter > 0 and not counter % VERBOSITY:
-                database.insert_changesets(changesets_values)
-                changesets_values[:] = []
-    return counter
+from database import ChangesetStore
 
 
 def wipe_database(args):
@@ -36,12 +9,12 @@ def wipe_database(args):
     raw_input("press ^C now if you don't want "
               "this or enter to continue.\n")
     print "wiping..."
-    database.wipe()
+    ChangesetStore.wipe_database()
 
 
 def init_database(args):
     print "going to initialize database..."
-    database.init()
+    ChangesetStore.initialize_postgres()
 
 
 def load_database(args):
@@ -50,21 +23,21 @@ def load_database(args):
     if args.test:
         print 'testing'
         import testdata
-        database.insert_changesets(testdata.sample1)
+        ChangesetStore.insert_changesets(testdata.sample1)
         exit(0)
 
     stdout.write("working.")
 
     if os.path.exists(args.changesetfile):
-        processed = parse_xml_file(args.changesetfile, args.limit)
-        # push any remaining changesets
-        if len(changesets_values) > 0:
-            database.insert_changesets(changesets_values)
+        processed = ChangesetStore.parse_xml_file(
+            args.changesetfile, args.limit)
     else:
         print 'no such file: ', args.changesetfile
-    print "\ndone. {counter} changesets"
-    " processed.".format(counter=processed)
+    print "\ndone. {counter} changesets processed.".format(counter=processed)
 
+
+def make_database_catch_up():
+    pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -82,9 +55,11 @@ if __name__ == "__main__":
         "and port specified in config.py")
     parser_init.set_defaults(func=init_database)
 
+    # the wipe subcommand
     parser_wipe = subparsers.add_parser(
         "wipe",
         help="This command wipes your changesets table clean.")
+    parser_wipe.set_defaults(func=wipe_database)
 
     # the loading subcommand
     parser_load = subparsers.add_parser(

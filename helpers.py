@@ -9,6 +9,17 @@ osmtypes = ["node", "way", "relation"]
 actions = ["create", "modify", "delete"]
 
 
+def get_connection_string(with_database=True):
+    connstr = ""
+    for key, val in config.PG_CONNECTION.iteritems():
+        if not with_database and key == "dbname":
+            continue
+        connstr += " {key}={val}".format(
+            key=key,
+            val=val)
+    return connstr
+
+
 def get_current_state_from_server():
     """Get the current state from the OSM server, including the current
     delta sequence number, and the last run time."""
